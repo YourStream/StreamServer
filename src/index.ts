@@ -1,5 +1,8 @@
 import NodeMediaServer from 'node-media-server';
 
+process.env.FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg'
+const FFMPEG_PATH = process.env.FFMPEG_PATH
+
 const httpConfig = {
     port: 8000,
     allow_origin: "*",
@@ -15,7 +18,7 @@ const rtmpConfig = {
 };
 
 const transformationConfig = {
-    ffmpeg: "./ffmpeg.exe",
+    ffmpeg: FFMPEG_PATH,
     tasks: [
         {
             app: "live",
