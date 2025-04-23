@@ -1,0 +1,20 @@
+{
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.3"
+  },
+  "name": "transcoder-api",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^5.1.0",
+    "redis": "^4.7.0"
+  },
+  "scripts": {
+    "start": "ts-node src/index.ts"
+  },
+  "author": "VoDACode",
+  "license": "ISC",
+  "description": ""
+}

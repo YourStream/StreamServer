@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: tiangolo/nginx-rtmp
+    ports:
+      - "80:80"
+      - "1935:1935"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /tmp/hls:/tmp/hls
+    networks:
+      - stream-net
+
+  stream-api:
+    build: ./stream-api
+    environment:
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+    networks:
+      - stream-net
+
+  transcoder-api:
+    build: ./transcoder-api
+    environment:
+      - REDIS_HOST=redis
+      - STREAM_API_HOST=stream-api:3000
+    depends_on:
+      - redis
+      - stream-api
+    networks:
+      - stream-net
+
+  transcoder-144:
+    build: ./transcoder
+    environment:
+      - QUALITY=256x144
+      - REDIS_HOST=redis
+      - RTMP_SERVER=nginx
+    depends_on:
+      - transcoder-api
+      - redis
+    networks:
+      - stream-net
+
+  transcoder-360:
+    build: ./transcoder
+    environment:
+      - QUALITY=640x360
+      - REDIS_HOST=redis
+      - RTMP_SERVER=nginx
+    depends_on:
+      - transcoder-api
+      - redis
+    networks:
+      - stream-net
+
+  transcoder-720:
+    build: ./transcoder
+    environment:
+      - QUALITY=1280x720
+      - REDIS_HOST=redis
+      - RTMP_SERVER=nginx
+    depends_on:
+      - transcoder-api
+      - redis
+    networks:
+      - stream-net
+
+  redis:
+    image: redis:7
+    networks:
+      - stream-net
+
+networks:
+  stream-net:
+    driver: bridge
