@@ -1,10 +1,11 @@
 {
   "devDependencies": {
+    "@yourstream/core": "^0.0.27",
     "@types/express": "^5.0.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.3"
   },
-  "name": "transcoder-api",
+  "name": "viewer-api",
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {

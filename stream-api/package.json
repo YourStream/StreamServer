@@ -1,6 +1,7 @@
 {
   "devDependencies": {
     "@types/express": "^5.0.1",
+    "@yourstream/core": "^0.0.33",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.3"
   },
@@ -8,11 +9,14 @@
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
+    "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "mongoose": "^8.14.1",
+    "pino-pretty": "^13.0.0",
     "redis": "^4.7.0"
   },
   "scripts": {
-    "start": "ts-node src/index.ts"
+    "start": "ts-node src/index.ts | npx pino-pretty"
   },
   "author": "VoDACode",
   "license": "ISC",

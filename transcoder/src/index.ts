@@ -1,74 +1,27 @@
-import { createClient } from 'redis';
-import { exec } from 'child_process';
-import util from 'util';
+import { config } from 'dotenv';
+config();
+import { logger, serviceAuthVerifier } from '@yourstream/core/index.js';
+import express from 'express';
+import transcoderRouter from './routers/transcoder';
 
-type TranscodeTask = {
-    user: string;
-    streamKey: string;
-    publicKey: string;
-};
+const PORT = process.env.PORT || 3000;
+const app = express();
 
-const QUALITY = process.env.QUALITY!;
-const REDIS_HOST = process.env.REDIS_HOST!;
-const RTMP_SERVER = `rtmp://${process.env.RTMP_SERVER}/live` || 'rtmp://localhost/live';
+app.use(express.json());
+app.use('/api/transcoder', transcoderRouter);
 
-const redis = createClient({ url: `redis://${REDIS_HOST}:6379` });
-const execPromise = util.promisify(exec);
-
-// list of stream keys
-const streamKeys = new Set<string>();
-
-redis.connect().then(() => {
-    console.log(`[TRANSCODER ${QUALITY}] Connected to Redis`);
-    listen();
-});
-
-async function waitForStream(rtmpUrl: string, retries = 10, delayMs = 1000): Promise<boolean> {
-    for (let i = 0; i < retries; i++) {
-        try {
-            await execPromise(`ffprobe -v error -i ${rtmpUrl}`);
-            return true;
-        } catch {
-            console.log(`[WAITING] ${rtmpUrl} not ready (${i + 1}/${retries})`);
-            await new Promise((r) => setTimeout(r, delayMs));
-        }
+(async () => {
+    if (!process.env.SERVICE_NAME || !process.env.SERVICE_SECRET || !process.env.AUTH_SERVICE_ADDRESS) {
+        logger.error('[ERROR] Missing environment variables: SERVICE_NAME, SERVICE_SECRET, AUTH_SERVICE_ADDRESS');
+        process.exit(1);
     }
-    return false;
-}
 
-async function listen() {
-    while (true) {
-        const data = await redis.brPop(`transcode:${QUALITY}`, 0);
-        if (!data) continue;
-
-        const task: TranscodeTask = JSON.parse(data.element);
-        const inputUrl = `${RTMP_SERVER}/${task.user}-${task.streamKey}`;
-        const outputKey = `${task.publicKey}_${QUALITY}`;
-        const outputUrl = `${RTMP_SERVER}/${outputKey}`;
-
-        if (streamKeys.has(outputKey)) {
-            console.log(`[ALREADY RUNNING] ${task.streamKey} -> ${QUALITY}`);
-            continue;
-        }
-
-        console.log(`[TASK RECEIVED] ${task.streamKey} -> ${QUALITY}`);
-
-        const available = await waitForStream(inputUrl);
-        if (!available) {
-            console.error(`[TIMEOUT] Stream ${inputUrl} not available.`);
-            continue;
-        }
-
-        const cmd = `ffmpeg -y -i ${inputUrl} -c:v libx264 -b:v 1000000 -s ${QUALITY} -f flv ${outputUrl}`;
-        console.log(`[STARTING FFMPEG] ${cmd}`);
-
-        streamKeys.add(outputKey);
-        exec(cmd, (err) => {
-            if (err) {
-                console.error(`[FFMPEG ERROR ${QUALITY}]`, err.message);
-                streamKeys.delete(outputKey);
-                return;
-            }
-        });
+    const authVerifierState = await serviceAuthVerifier.connect(process.env.SERVICE_NAME as string, process.env.SERVICE_SECRET as string, process.env.AUTH_SERVICE_ADDRESS as string);
+    if (!authVerifierState) {
+        process.exit(1);
     }
-}
+
+    app.listen(PORT, () => {
+        logger.info(`[INFO] Transcoder service is running on port ${PORT}`);
+    });
+})();
