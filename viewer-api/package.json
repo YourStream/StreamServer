@@ -1,7 +1,7 @@
 {
   "devDependencies": {
-    "@yourstream/core": "^0.0.27",
     "@types/express": "^5.0.1",
+    "@yourstream/core": "^0.0.33",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.3"
   },
@@ -9,6 +9,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
+    "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "redis": "^4.7.0"
   },

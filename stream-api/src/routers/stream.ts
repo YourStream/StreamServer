@@ -23,6 +23,7 @@ router.post('/on_publish', async (req, res) => {
     const isMainStream = key.split('_').length === 1;
     const quality = isMainStream ? null : key.split('_')[1];
 
+    logger.trace(`[STREAM] ${name} isMainStream: "${isMainStream}" quality: "${quality}"`);
 
     const stream = await StreamModel.findOne({ userId: userId });
     if (!stream) {
@@ -39,13 +40,13 @@ router.post('/on_publish', async (req, res) => {
     }
 
     if (stream.isLive && isMainStream) {
-        logger.debug(`[REJECT] Stream already live: ${name}`);
+        logger.debug(`[REJECT] Stream already live: ${name}_source`);
         res.status(403).end();
         return;
     }
 
     if (!isMainStream && stream.qualities.some((q) => q.quality === quality && q.status === 'live')) {
-        logger.debug(`[REJECT] Stream already live: ${name}`);
+        logger.debug(`[REJECT] Stream already live: ${name}_${quality}`);
         res.status(403).end();
         return;
     }
@@ -57,7 +58,7 @@ router.post('/on_publish', async (req, res) => {
         qualities.forEach((quality) => {
             stream.qualities.push({
                 isSource: false,
-                status: 'offline',
+                status: 'prepare',
                 quality: quality,
             });
         });
@@ -68,59 +69,37 @@ router.post('/on_publish', async (req, res) => {
         });
         await stream.save();
         res.status(200).end();
-        logger.debug(`[STREAM STARTED] ${name}`);
-        const response = await buildServiceRequest(TRANSCODER_SERVICE_ADDRESS, "/api/transcoder/restream", {
+
+        logger.trace(`[REQUEST] Sending event to transcoder. URL: ${TRANSCODER_SERVICE_ADDRESS}/api/transcoder/start`);
+        const response = await buildServiceRequest(TRANSCODER_SERVICE_ADDRESS, `/api/transcoder/start`, {
             method: "POST",
             body: {
                 userId: userId,
                 source: name,
-                destination: `${userId}-public_source`,
             },
         });
+
         if (response.status !== 200) {
-            logger.debug(`[REJECT] Failed to send event to restream: ${name}`);
+            logger.debug(`[REJECT] Failed to send event to transcoder: ${name}`);
+        } else {
+            logger.debug(`[TRANSCODER] ${name} -> ${userId}-public_source`);
         }
+        
         return;
     } else {
-        const qualityIndex = stream.qualities.findIndex((q) => q.quality === quality);
-        if (qualityIndex === -1) {
-            logger.debug(`[REJECT] Invalid stream quality: ${name}`);
+        const qualityObj = stream.qualities.find((q) => q.quality === quality);
+        if (!qualityObj) {
+            logger.debug(`[REJECT] Invalid stream key: ${name}`);
             res.status(403).end();
             return;
         }
-
-        if (stream.qualities[qualityIndex].status == 'prepare' || stream.qualities[qualityIndex].status == 'live') {
+        if (qualityObj.status == 'live') {
             logger.debug(`[REJECT] Stream already live: ${name}`);
             res.status(403).end();
             return;
         }
-
-
-        if (stream.qualities[qualityIndex].status == 'offline') {
-            stream.qualities[qualityIndex].status = 'prepare';
-            await stream.save();
-            if (!stream.qualities[qualityIndex].isSource) {
-                const response = await buildServiceRequest(TRANSCODER_SERVICE_ADDRESS, "/api/transcoder/start", {
-                    method: "POST",
-                    body: {
-                        userId: userId,
-                        source: name,
-                        destination: `${userId}-public_${quality}`,
-                        destinationQuality: quality,
-                    },
-                });
-                if (response.status !== 200) {
-                    stream.qualities[qualityIndex].status = 'offline';
-                    await stream.save();
-                    logger.debug(`[REJECT] Failed to send event to transcoder: ${name}`);
-                    res.status(500).end();
-                    return;
-                }
-            }
-
-            stream.qualities[qualityIndex].status = 'live';
-            await stream.save();
-        }
+        logger.debug(`[TRANSCODER] ${name} -> ${userId}-${quality}`);
+        qualityObj.status = 'live';
     }
     await stream.save();
 
@@ -128,5 +107,47 @@ router.post('/on_publish', async (req, res) => {
     res.status(200).end();
 });
 
+router.post('/on_stop', async (req, res) => {
+    const name = req.body.name as string;
+    if (!name) {
+        logger.debug(`[REJECT] Invalid stream key: ${name}`);
+        res.status(403).end();
+        return;
+    }
+    // name is: userId-key or userId-key_quality
+    const [userId, key] = name.split('-');
+    const isMainStream = key.split('_').length === 1;
+    const quality = isMainStream ? null : key.split('_')[1];
+
+    logger.trace(`[STREAM STOP] ${name} isMainStream: "${isMainStream}" quality: "${quality}"`);
+
+    const stream = await StreamModel.findOne({ userId: userId });
+    if (!stream) {
+        logger.debug(`[REJECT] Invalid stream key: ${name}. User not found`);
+        res.status(403).end();
+        return;
+    }
+
+    if (isMainStream) {
+        stream.isLive = false;
+        stream.qualities.forEach((q) => {
+            q.status = 'offline';
+        });
+        await stream.save();
+        logger.debug(`[STREAM STOPPED] Main stream stopped: ${name}`);
+    } else {
+        const qualityObj = stream.qualities.find((q) => q.quality === quality);
+        if (!qualityObj) {
+            logger.debug(`[REJECT] Invalid stream key: ${name}`);
+            res.status(403).end();
+            return;
+        }
+        qualityObj.status = 'offline';
+        await stream.save();
+        logger.debug(`[STREAM STOPPED] Quality stream stopped: ${name}`);
+    }
+
+    res.status(200).end();
+});
 
 export default router;

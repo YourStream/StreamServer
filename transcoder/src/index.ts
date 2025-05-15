@@ -8,6 +8,12 @@ const PORT = process.env.PORT || 3000;
 const app = express();
 
 app.use(express.json());
+
+app.use((req, res, next) => {
+    logger.info(`[REQUEST] ${req.method} ${req.url}`);
+    next();
+});
+
 app.use('/api/transcoder', transcoderRouter);
 
 (async () => {

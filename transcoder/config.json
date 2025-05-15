@@ -1,0 +1,40 @@
+{
+    "qualities": [
+        {
+            "name": "144p",
+            "resolution": "256x144",
+            "videoBitrate": "300k",
+            "audioBitrate": "64k"
+        },
+        {
+            "name": "240p",
+            "resolution": "426x240",
+            "videoBitrate": "500k",
+            "audioBitrate": "64k"
+        },
+        {
+            "name": "360p",
+            "resolution": "640x360",
+            "videoBitrate": "1000k",
+            "audioBitrate": "96k"
+        },
+        {
+            "name": "480p",
+            "resolution": "854x480",
+            "videoBitrate": "1500k",
+            "audioBitrate": "96k"
+        },
+        {
+            "name": "720p",
+            "resolution": "1280x720",
+            "videoBitrate": "2500k",
+            "audioBitrate": "128k"
+        },
+        {
+            "name": "1080p",
+            "resolution": "1920x1080",
+            "videoBitrate": "4000k",
+            "audioBitrate": "128k"
+        }
+    ]
+}

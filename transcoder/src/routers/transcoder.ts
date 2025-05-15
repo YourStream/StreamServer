@@ -1,43 +1,68 @@
 import { logger } from "@yourstream/core/index.js";
 import { serviceAuthGuard } from "@yourstream/core/serviceAuthVerifier.js";
 import { Router } from "express";
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import util from 'util';
+import fs from 'fs';
 
 const router = Router();
 const execPromise = util.promisify(exec);
 
-const RTMP_SERVER = `rtmp://${process.env.RTMP_SERVER}/live`;
-if (!process.env.RTMP_SERVER) {
-    logger.error('[ERROR] Missing RTMP_SERVER environment variable');
+const ORIGINAL_RTMP_SERVER = `rtmp://${process.env.ORIGINAL_RTMP_SERVER}/live`;
+if (!process.env.ORIGINAL_RTMP_SERVER) {
+    logger.error('[ERROR] Missing ORIGINAL_RTMP_SERVER environment variable');
     process.exit(1);
 }
 
-const QUALITY_TABLE = {
-    '144p': '256:144',
-    '360p': '640:360',
-    '480p': '854:480',
-    '720p': '1280:720',
-    '1080p': '1920:1080',
-};
+const config = JSON.parse(fs.readFileSync('./config.json', 'utf-8'));
+const qualities: { name: string, resolution: string, videoBitrate: string, audioBitrate: string }[] = config.qualities;
+const splitCount = qualities.length;
+const splitLabels = qualities.map((q, i) => `[v${i}]`).join('');
+const scaleFilters = qualities.map((q, i) => `[v${i}]scale=${q.resolution}[vout${i}]`).join('; ');
+const filterComplex = `[0:v]split=${splitCount}${splitLabels}; ${scaleFilters}`;
 
 router.post('/start', serviceAuthGuard, async (req, res) => {
-    const { userId, source, destination, destinationQuality } = req.body;
-    if (!userId || !source || !destination || !destinationQuality) {
-        logger.trace(`[REJECT] Missing parameters: userId: ${userId}, source: ${source}, destination: ${destination}, destinationQuality: ${destinationQuality}`);
+    const { userId, source } = req.body;
+    if (!userId || !source) {
+        logger.trace(`[REJECT] Missing parameters: userId: ${userId}, source: ${source}`);
         res.status(400).send('Missing parameters');
         return;
     }
+    logger.trace(`[TRANSCODE] userId: ${userId}, source: ${source}`);
 
-    const inputUrl = `${RTMP_SERVER}/${source}`;
-    const outputUrl = `${RTMP_SERVER}/${destination}`;
-    const scale = QUALITY_TABLE[destinationQuality as keyof typeof QUALITY_TABLE];
-    if (!scale) {
-        logger.trace(`[REJECT] Invalid quality: ${destinationQuality}`);
-        res.status(400).send('Invalid quality');
-        return;
-    }
-    const ffmpegCommand = `ffmpeg -i ${inputUrl} -c:v libx264 -preset veryfast -crf 28 -c:a aac -b:a 96k -vf scale=${scale} -f flv ${outputUrl}`;
+    const inputUrl = `${ORIGINAL_RTMP_SERVER}/${source}`;
+
+    const args: string[] = [
+        '-y',
+        '-analyzeduration', '10000000',
+        '-probesize', '10000000',
+        '-i', inputUrl,
+        '-filter_complex', filterComplex,
+    ];
+
+    qualities.forEach((q, i) => {
+        if (!fs.existsSync(`/tmp/hls/${userId}/${q.name}`)) {
+            fs.mkdirSync(`/tmp/hls/${userId}/${q.name}`, { recursive: true });
+        }
+        args.push(
+            '-map', `[vout${i}]`,
+            '-map', 'a',
+            `-c:v:${i}`, 'libx264',
+            `-b:v:${i}`, q.videoBitrate,
+            `-c:a:${i}`, 'aac',
+            `-b:a:${i}`, q.audioBitrate,
+            '-strict', '-2',
+            '-f', 'hls',
+            '-hls_time', '4',
+            '-hls_list_size', '6',
+            '-hls_flags', 'delete_segments+omit_endlist',
+            '-hls_segment_filename', `/tmp/hls/${userId}/${q.name}/segment_%03d.ts`,
+            `/tmp/hls/${userId}/${q.name}/index.m3u8`,
+        );
+    });
+
+    logger.debug(`[FFMPEG COMMAND] ffmpeg ${args.join(' ')}`);
+
     // wait for the stream to be available
     const streamReady = await waitForStream(inputUrl);
     if (!streamReady) {
@@ -45,16 +70,27 @@ router.post('/start', serviceAuthGuard, async (req, res) => {
         res.status(500).send('Stream not ready');
         return;
     }
-    logger.info(`[START] Starting transcoding from ${inputUrl} to ${outputUrl}`);
+    logger.info(`[START] Starting transcoding from ${inputUrl}`);
     try {
-        exec(ffmpegCommand, (error) => {
-            if (error) {
-                logger.error(`[ERROR] Failed to start transcoding: ${error}`);
-                return;
-            }
-            logger.info(`[SUCCESS] Transcoding started from ${inputUrl} to ${outputUrl}`);
+        // start the ffmpeg process
+        const ffmpeg = spawn('ffmpeg', args);
+        ffmpeg.stderr.on('data', (data) => {
+            logger.debug(`[FFMPEG STDERR] ${data}`);
         });
-        logger.info(`[SUCCESS] Transcoding started from ${inputUrl} to ${outputUrl}`);
+        ffmpeg.stdout.on('data', (data) => {
+            logger.debug(`[FFMPEG STDOUT] ${data}`);
+        });
+        ffmpeg.on('error', (error) => {
+            logger.error(`[ERROR] Failed to start transcoding: ${error}`);
+        });
+        ffmpeg.on('close', (code) => {
+            if (code !== 0) {
+                logger.error(`[ERROR] Transcoding process exited with code ${code}`);
+            } else {
+                logger.info(`[SUCCESS] Transcoding process exited successfully`);
+            }
+        });
+        logger.info(`[SUCCESS] Transcoding started from ${inputUrl}`);
         res.status(200).send('Transcoding started');
     }
     catch (error) {
@@ -63,54 +99,80 @@ router.post('/start', serviceAuthGuard, async (req, res) => {
     }
 });
 
-router.post('/restream', serviceAuthGuard, async (req, res) => {
-    const { userId, source, destination } = req.body;
-    if (!userId || !source || !destination) {
-        logger.trace(`[REJECT] Missing parameters: userId: ${userId}, source: ${source}, destination: ${destination}`);
-        res.status(400).send('Missing parameters');
+router.post('/on_publish_done', async (req, res) => {
+    const name = req.body.name as string;
+    if (!name) {
+        logger.debug(`[REJECT] Invalid stream key: ${name}`);
+        res.status(403).end();
         return;
     }
-    const inputUrl = `${RTMP_SERVER}/${source}`;
-    const outputUrl = `${RTMP_SERVER}/${destination}`;
+    const [userId, key] = name.split('-');
+    const isMainStream = key.split('_').length === 1;
+    const quality = isMainStream ? null : key.split('_')[1];
+    const outputDir = `/tmp/hls/${userId}`;
 
-    const ffmpegCommand = `ffmpeg -i ${inputUrl} -c:v copy -c:a copy -f flv ${outputUrl}`;
+    const inputUrl = `${ORIGINAL_RTMP_SERVER}/live/${name}`;
 
-    // wait for the stream to be available
-    const streamReady = await waitForStream(inputUrl);
-    if (!streamReady) {
-        logger.error(`[ERROR] Stream not ready: ${inputUrl}`);
-        res.status(500).send('Stream not ready');
-        return;
-    }
-    logger.info(`[START] Starting restream from ${inputUrl} to ${outputUrl}`);
-    try {
-        exec(ffmpegCommand, (error) => {
-            if (error) {
-                logger.error(`[ERROR] Failed to start restream: ${error}`);
-                return;
-            }
-            logger.info(`[SUCCESS] Restream started from ${inputUrl} to ${outputUrl}`);
-        });
-        logger.info(`[SUCCESS] Restream started from ${inputUrl} to ${outputUrl}`);
-        res.status(200).send('Restream started');
-    } catch (error) {
-        logger.error(`[ERROR] Failed to start restream: ${error}`);
-        res.status(500).send('Failed to start restream');
-    }
+    logger.trace(`[TRANSCODE] userId: ${userId}, source: ${inputUrl}`);
+    logger.trace(`[TRANSCODE] inputUrl: ${inputUrl}`);
+    logger.trace(`[TRANSCODE] outputDir: ${outputDir}`);
+
+    const args: string[] = [
+        '-i', inputUrl,
+    ];
+    qualities.forEach((q, i) => {
+        args.push(
+            `-filter:v:${i}`, `scale=w=${q.resolution.split('x')[0]}:h=${q.resolution.split('x')[1]}`,
+            `-c:v:${i}`, 'libx264',
+            `-b:v:${i}`, q.videoBitrate,
+            `-map`, `0:v:${i}`,
+            `-map`, `0:a:0`
+        );
+    });
+
+    args.push(
+        '-preset', 'veryfast',
+        '-f', 'hls',
+        '-hls_time', '4',
+        '-hls_playlist_type', 'event',
+        '-master_pl_name', 'index.m3u8',
+        '-hls_segment_filename', `${outputDir}/v%v/fileSequence%d.ts`,
+        '-var_stream_map', qualities.map((_, i) => `v:${i},a:${i}`).join(' '),
+        `${outputDir}/v%v/index.m3u8`
+    );
+
+    const ffmpeg = spawn('ffmpeg', args);
+
+    ffmpeg.stderr.on('data', data => console.error(`[FFmpeg ${name}]`, data.toString()));
+    ffmpeg.on('close', code => console.log(`[FFmpeg ${name}] exited with code ${code}`));
+
+    res.send('Transcoding started');
 });
 
-async function waitForStream(rtmpUrl: string, retries = 10, delayMs = 1000): Promise<boolean> {
-    for (let i = 0; i < retries; i++) {
+async function waitForStream(rtmpUrl: string, delayMs = 1000): Promise<{ hasVideo: boolean; hasAudio: boolean }> {
+    let attempt = 0;
+    while (true) {
+        attempt++;
         try {
-            await execPromise(`ffprobe -v error -i ${rtmpUrl}`);
-            return true;
-        } catch {
-            logger.debug(`[WAITING] ${rtmpUrl} not ready (${i + 1}/${retries})`);
+            const { stdout } = await execPromise(`ffprobe -v error -analyzeduration 10000000 -probesize 10000000 -show_streams -of json ${rtmpUrl}`);
+            const streams = JSON.parse(stdout).streams;
+
+            const hasVideo = streams.some((stream: any) => stream.codec_type === 'video');
+            const hasAudio = streams.some((stream: any) => stream.codec_type === 'audio');
+
+            logger.debug(`[FFPROBE] Stream info: hasVideo=${hasVideo}, hasAudio=${hasAudio}, streams=${JSON.stringify(streams)}`);
+
+            if (hasVideo && hasAudio) {
+                logger.debug(`[WAITING] Stream is ready in ${rtmpUrl} (attempt ${attempt})`);
+                return { hasVideo, hasAudio };
+            } else {
+                throw new Error('No video or audio stream found');
+            }
+        } catch (error: any) {
+            logger.debug(`[WAITING] Stream not ready in ${rtmpUrl} (attempt ${attempt}): ${error.message}`);
             await new Promise((r) => setTimeout(r, delayMs));
         }
     }
-    return false;
 }
-
 
 export default router;

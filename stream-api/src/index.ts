@@ -13,6 +13,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/stream', streamRouter);
 app.use('/api/user', userRouter);
 
+app.use((req, res, next) => {
+    logger.trace(`[REQUEST] ${req.method} ${req.url}`);
+    logger.trace(`[REQUEST] ${JSON.stringify(req.query)}`);
+    next();
+});
+
 (async () => {
     if (!process.env.SERVICE_NAME || !process.env.SERVICE_SECRET || !process.env.AUTH_SERVICE_ADDRESS) {
         logger.error('[ERROR] Missing environment variables: SERVICE_NAME, SERVICE_SECRET, AUTH_SERVICE_ADDRESS');
