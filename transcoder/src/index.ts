@@ -10,7 +10,7 @@ const app = express();
 app.use(express.json());
 
 app.use((req, res, next) => {
-    logger.info(`[REQUEST] ${req.method} ${req.url}`);
+    logger.debug(`[REQUEST] ${req.method} ${req.url}`);
     next();
 });
 

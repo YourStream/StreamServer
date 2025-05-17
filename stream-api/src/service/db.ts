@@ -32,7 +32,11 @@ export async function testDataset() {
             userId: new mongoose.Types.ObjectId(),
             streamKey: 'test',
             isLive: false,
-            qualities: []
+            source: {
+                width: 0,
+                height: 0,
+                display_aspect_ratio: '0:0',
+            },
         });
         await newStream.save();
         logger.info('[INFO] Stream dataset is empty, created a new document');

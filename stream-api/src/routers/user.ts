@@ -1,13 +1,14 @@
 import { serviceAuthGuard } from "@yourstream/core/serviceAuthVerifier.js";
 import { Router } from "express";
 import { StreamModel } from "../models/StreamModel";
+import * as stringUtils from "../utils/string";
 
 const router = Router();
 
-router.get('/origen', serviceAuthGuard, async (req, res) => {
-    const { id } = req.query;
+router.get('/stream-key', serviceAuthGuard, async (req, res) => {
+    const { userId } = req.body;
 
-    const stream = await StreamModel.findOne({ userId: id });
+    const stream = await StreamModel.findOne({ userId: userId });
     if (!stream) {
         res.status(404).send('User not found');
         return;
@@ -16,48 +17,62 @@ router.get('/origen', serviceAuthGuard, async (req, res) => {
     res.status(200).send(stream.streamKey);
 });
 
-router.get('/quality', serviceAuthGuard, async (req, res) => {
-    const { id } = req.query;
+router.get('/qualities', async (req, res) => {
+    const { userId } = req.query;
+    if (!userId) {
+        res.status(400).send('User ID is required');
+        return;
+    }
 
-    const stream = await StreamModel.findOne({ userId: id });
+    const stream = await StreamModel.findOne({ userId: userId });
     if (!stream) {
         res.status(404).send('User not found');
         return;
     }
 
-    const qualities = stream.qualities.map((quality) => {
-        return {
-            status: quality.status,
-            isSource: quality.isSource,
-            quality: quality.quality,
-            rtmp: `/live/${stream.userId}-public_${quality.quality}`,
-            url: `/hls/public-${stream.userId}_${quality.quality}.m3u8`
-        };
-    });
-    
-    res.status(200).send(qualities);
+    res.status(200).send(stream.source.qualities);
 });
 
-router.get('/stream', serviceAuthGuard, async (req, res) => {
-    const { id } = req.query;
-
-    const stream = await StreamModel.findOne({ userId: id });
-    if (!stream) {
-        res.status(404).send('User not found');
+router.post('/create', serviceAuthGuard, async (req, res) => {
+    const { userId } = req.body;
+    if (!userId) {
+        res.status(400).send('User ID is required');
         return;
     }
-
-    res.status(200).send({
-        isLive: stream.isLive,
-        qualities: stream.qualities.map((quality) => {
-            return {
-                status: stream.isLive,
-                quality: quality,
-                rtmp: `${process.env.RTMP_SERVER}/live/${stream.userId}_${quality}`,
-                url: `${process.env.STREAM_API_HOST}/hls/public-${stream.userId}_${quality}.m3u8`
-            };
-        })
+    const stream = await StreamModel.findOne({ userId: userId });
+    if (stream) {
+        res.status(400).send('Stream already exists');
+        return;
+    }
+    const newStream = new StreamModel({
+        userId: userId,
+        streamKey: `${userId}-${Date.now()}${stringUtils.random(64)}`,
+        isLive: false,
+        source: {
+            width: 0,
+            height: 0,
+            display_aspect_ratio: '0:0',
+            qualities: []
+        }
     });
+    await newStream.save();
+    res.status(201).send(newStream);
+});
+
+router.post('/stream-key/update', serviceAuthGuard, async (req, res) => {
+    const { userId } = req.body;
+    if (!userId) {
+        res.status(400).send('User ID is required');
+        return;
+    }
+    const stream = await StreamModel.findOne({ userId: userId });
+    if (!stream) {
+        res.status(404).send('Stream not found');
+        return;
+    }
+    stream.streamKey = `${userId}-${Date.now()}${stringUtils.random(64)}`;
+    await stream.save();
+    res.status(200).send(stream.streamKey);
 });
 
 export default router;

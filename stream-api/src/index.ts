@@ -9,15 +9,15 @@ import userRouter from './routers/user';
 const PORT = process.env.PORT || 3000;
 const app = express();
 app.use(express.urlencoded({ extended: true }));
-
-app.use('/api/stream', streamRouter);
-app.use('/api/user', userRouter);
+app.use(express.json());
 
 app.use((req, res, next) => {
     logger.trace(`[REQUEST] ${req.method} ${req.url}`);
-    logger.trace(`[REQUEST] ${JSON.stringify(req.query)}`);
     next();
 });
+
+app.use('/api/stream', streamRouter);
+app.use('/api/user', userRouter);
 
 (async () => {
     if (!process.env.SERVICE_NAME || !process.env.SERVICE_SECRET || !process.env.AUTH_SERVICE_ADDRESS) {
