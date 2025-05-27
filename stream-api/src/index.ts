@@ -27,8 +27,11 @@ app.use('/api/user', userRouter);
 
     logger.info(`[INFO] Connecting to auth service at ${process.env.AUTH_SERVICE_ADDRESS}`);
     logger.info(`[INFO] Service name: ${process.env.SERVICE_NAME}`);
-    await serviceAuthVerifier.connect(process.env.SERVICE_NAME as string, process.env.SERVICE_SECRET as string, process.env.AUTH_SERVICE_ADDRESS as string);
-
+    const authVerifierState = await serviceAuthVerifier.connect(process.env.SERVICE_NAME as string, process.env.SERVICE_SECRET as string, process.env.AUTH_SERVICE_ADDRESS as string);
+    if (!authVerifierState) {
+        process.exit(1);
+    }
+    
     await db.connect();
     await db.testDataset();
 
