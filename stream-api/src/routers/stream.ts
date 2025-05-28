@@ -23,7 +23,7 @@ router.post('/on_publish', async (req, res) => {
 
     logger.trace(`[STREAM] UserId: ${userId} starting`);
 
-    const stream = await StreamModel.findOne({ userId: userId });
+    const stream = await StreamModel.findOne({ _id: userId });
     if (!stream) {
         logger.debug(`[REJECT] Invalid stream key: ${name}. User not found`);
         logger.trace(`[REJECT] UserId: "${userId}" key: "${key}"`);
@@ -73,7 +73,7 @@ router.post('/on_publish_done', async (req, res) => {
 
     const [userId, key] = name.split('-');
 
-    const stream = await StreamModel.findOne({ userId: userId });
+    const stream = await StreamModel.findOne({ _id: userId });
     if (!stream) {
         logger.debug(`[REJECT] Invalid stream key: ${name}. User not found`);
         res.status(403).end();
@@ -92,6 +92,10 @@ router.post('/on_publish_done', async (req, res) => {
     }
 
     stream.isLive = false;
+    stream.source.width = 0;
+    stream.source.height = 0;
+    stream.source.display_aspect_ratio = '0:0';
+    stream.source.qualities.splice(0, stream.source.qualities.length);
 
     await stream.save();
 
@@ -120,7 +124,7 @@ router.post('/set_source_info', serviceAuthGuard, async (req, res) => {
 
     logger.trace(`[SET SOURCE INFO] userId: ${userId} width: ${width} height: ${height} display_aspect_ratio: ${display_aspect_ratio}`);
 
-    const stream = await StreamModel.findOne({ userId: userId });
+    const stream = await StreamModel.findOne({ _id: userId });
     if (!stream) {
         logger.debug(`[REJECT] Invalid stream key: ${userId}. User not found`);
         res.status(403).end();

@@ -1,7 +1,7 @@
 {
   "devDependencies": {
     "@types/express": "^5.0.1",
-    "@yourstream/core": "^0.0.33",
+    "@yourstream/core": "^0.0.38",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.3"
   },

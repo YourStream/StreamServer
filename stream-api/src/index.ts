@@ -5,6 +5,8 @@ import * as db from './service/db'
 import { logger, serviceAuthVerifier } from '@yourstream/core/index.js';
 import streamRouter from './routers/stream';
 import userRouter from './routers/user';
+import externalRouter from './routers/external';
+import { userAuthVerifier } from '@yourstream/core/userAuthVerifier.js';
 
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -18,8 +20,20 @@ app.use((req, res, next) => {
 
 app.use('/api/stream', streamRouter);
 app.use('/api/user', userRouter);
+app.use('/api/external', externalRouter);
 
 (async () => {
+
+    if (!process.env.USER_AUTH_SERVICE_ADDRESS) {
+        logger.error('[ERROR] Missing environment variable: USER_AUTH_SERVICE_ADDRESS');
+        return;
+    }
+
+    if (!await userAuthVerifier.connect(process.env.USER_AUTH_SERVICE_ADDRESS)) {
+        logger.error('[ERROR] Failed to connect to auth service');
+        return;
+    }
+
     if (!process.env.SERVICE_NAME || !process.env.SERVICE_SECRET || !process.env.AUTH_SERVICE_ADDRESS) {
         logger.error('[ERROR] Missing environment variables: SERVICE_NAME, SERVICE_SECRET, AUTH_SERVICE_ADDRESS');
         return;
@@ -31,7 +45,7 @@ app.use('/api/user', userRouter);
     if (!authVerifierState) {
         process.exit(1);
     }
-    
+
     await db.connect();
     await db.testDataset();
 

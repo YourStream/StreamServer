@@ -2,7 +2,8 @@ import { Schema, model, mongo } from "mongoose";
 
 const StreamSchema = new Schema({
   _id: { type: Schema.Types.ObjectId, default: () => new mongo.ObjectId() },
-  userId: { type: Schema.Types.ObjectId, required: true, index: true },
+  title: { type: String },
+  description: { type: String },
   streamKey: { type: String, required: true, unique: true, index: true },
   isLive: { type: Boolean, required: true },
   source: {
@@ -20,6 +21,27 @@ const StreamSchema = new Schema({
     },
     required: true,
   }
+}, {
+  methods: {
+    toResponse() {
+      return {
+        _id: this._id.toString(),
+        title: this.title,
+        description: this.description,
+        isLive: this.isLive,
+        source: {
+          width: this.source.width,
+          height: this.source.height,
+          display_aspect_ratio: this.source.display_aspect_ratio,
+          qualities: this.source.qualities.map(q => ({
+            name: q.name,
+            height: q.height,
+            width: q.width
+          }))
+        }
+      };
+    }
+  },
 });
 
 const StreamModel = model('Stream', StreamSchema);

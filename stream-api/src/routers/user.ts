@@ -5,10 +5,14 @@ import * as stringUtils from "../utils/string";
 
 const router = Router();
 
-router.get('/stream-key', serviceAuthGuard, async (req, res) => {
-    const { userId } = req.body;
+router.get('/stream-key/:userId', serviceAuthGuard, async (req, res) => {
+    const userId = req.params.userId;
+    if (!userId) {
+        res.status(400).send('User ID is required');
+        return;
+    }
 
-    const stream = await StreamModel.findOne({ userId: userId });
+    const stream = await StreamModel.findOne({ _id: userId });
     if (!stream) {
         res.status(404).send('User not found');
         return;
@@ -24,7 +28,7 @@ router.get('/qualities', async (req, res) => {
         return;
     }
 
-    const stream = await StreamModel.findOne({ userId: userId });
+    const stream = await StreamModel.findOne({ _id: userId });
     if (!stream) {
         res.status(404).send('User not found');
         return;
@@ -39,14 +43,16 @@ router.post('/create', serviceAuthGuard, async (req, res) => {
         res.status(400).send('User ID is required');
         return;
     }
-    const stream = await StreamModel.findOne({ userId: userId });
+    const stream = await StreamModel.findOne({ _id: userId });
     if (stream) {
         res.status(400).send('Stream already exists');
         return;
     }
     const newStream = new StreamModel({
-        userId: userId,
-        streamKey: `${userId}-${Date.now()}${stringUtils.random(64)}`,
+        _id: userId,
+        title: '',
+        description: '',
+        streamKey: `${Date.now()}${stringUtils.random(64)}`,
         isLive: false,
         source: {
             width: 0,
@@ -65,7 +71,7 @@ router.post('/stream-key/update', serviceAuthGuard, async (req, res) => {
         res.status(400).send('User ID is required');
         return;
     }
-    const stream = await StreamModel.findOne({ userId: userId });
+    const stream = await StreamModel.findOne({ _id: userId });
     if (!stream) {
         res.status(404).send('Stream not found');
         return;

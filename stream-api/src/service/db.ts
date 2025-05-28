@@ -31,6 +31,8 @@ export async function testDataset() {
         const newStream = new StreamModel({
             userId: new mongoose.Types.ObjectId(),
             streamKey: 'test',
+            title: 'Test Stream',
+            description: 'This is a test stream',
             isLive: false,
             source: {
                 width: 0,
