@@ -19,6 +19,20 @@ router.get('/:userId', async (req, res) => {
     res.status(200).send(stream.toResponse());
 });
 
+router.get('/:userId/short', async (req, res) => {
+    const userId = req.params.userId;
+    if (!userId) {
+        res.status(400).send('User ID is required');
+        return;
+    }
+    const stream = await StreamModel.findOne({ _id: userId });
+    if (!stream) {
+        res.status(404).send('Stream not found');
+        return;
+    }
+    res.status(200).send(stream.toShortResponse());
+});
+
 router.put('/', guard, async (req: YourStreamRequest, res) => {
     const userId = req.user?.userId;
     if (!userId) {

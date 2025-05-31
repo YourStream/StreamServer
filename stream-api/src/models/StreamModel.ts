@@ -23,6 +23,14 @@ const StreamSchema = new Schema({
   }
 }, {
   methods: {
+    toShortResponse() {
+      return {
+        _id: this._id.toString(),
+        title: this.title,
+        isLive: this.isLive
+      };
+    },
+
     toResponse() {
       return {
         _id: this._id.toString(),

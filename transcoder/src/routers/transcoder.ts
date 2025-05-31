@@ -23,10 +23,6 @@ if (!process.env.ORIGINAL_RTMP_SERVER) {
 
 const config = JSON.parse(fs.readFileSync('./config.json', 'utf-8'));
 const qualities: { name: string, resolution: string, videoBitrate: string, audioBitrate: string }[] = config.qualities;
-const splitCount = qualities.length;
-const splitLabels = qualities.map((q, i) => `[v${i}]`).join('');
-const scaleFilters = qualities.map((q, i) => `[v${i}]scale=${q.resolution}[vout${i}]`).join('; ');
-const filterComplex = `[0:v]split=${splitCount}${splitLabels}; ${scaleFilters}`;
 
 router.post('/start', serviceAuthGuard, async (req, res) => {
     const { userId, source } = req.body;
@@ -47,6 +43,29 @@ router.post('/start', serviceAuthGuard, async (req, res) => {
         return;
     }
 
+    const splitCount = qualities.length;
+    let splitLabels = '';
+    let scaleFilters = '';
+
+    let index = 0;
+    qualities.forEach((q, i) => {
+        const height = parseInt(q.resolution.split('x')[1]);
+        if (streamReady.video.height < height) {
+            logger.trace(`[REJECT] Resolution ${q.resolution} is larger than the original stream resolution ${streamReady.video.height}`);
+            return;
+        }
+        if (!fs.existsSync(`/tmp/hls/${userId}/${q.name}`)) {
+            fs.mkdirSync(`/tmp/hls/${userId}/${q.name}`, { recursive: true });
+        }
+        splitLabels += `[vout${i}]`;
+        scaleFilters += `[vout${i}]scale=${q.resolution}[vout${i}]; `;
+        index++;
+    });
+    // remove the last semicolon and space
+    scaleFilters = scaleFilters.slice(0, -2);
+
+    const filterComplex = `[0:v]split=${index}${splitLabels}; ${scaleFilters}`;
+
     const args: string[] = [
         '-y',
         '-analyzeduration', '10000000',
@@ -58,14 +77,9 @@ router.post('/start', serviceAuthGuard, async (req, res) => {
     const processQualities: { name: string, resolution: string }[] = [];
 
     qualities.forEach((q, i) => {
-
         const height = parseInt(q.resolution.split('x')[1]);
         if (streamReady.video.height < height) {
-            logger.trace(`[REJECT] Resolution ${q.resolution} is larger than the original stream resolution ${streamReady.video.height}`);
             return;
-        }
-        if (!fs.existsSync(`/tmp/hls/${userId}/${q.name}`)) {
-            fs.mkdirSync(`/tmp/hls/${userId}/${q.name}`, { recursive: true });
         }
         args.push(
             '-map', `[vout${i}]`,
@@ -140,12 +154,23 @@ router.post('/stop', serviceAuthGuard, async (req, res) => {
     logger.trace(`[TRANSCODE] userId: ${userId}`);
 
     const removeStatus = transcoderProcessRegister.remove(userId);
+
     if (removeStatus) {
         logger.info(`[STOP] Transcoding stopped for userId: ${userId}`);
         res.status(200).send('Transcoding stopped');
     } else {
         logger.info(`[STOP] No transcoding process found for userId: ${userId}`);
         res.status(404).send('No transcoding process found');
+    }
+
+    // remove the HLS files
+    const hlsPath = `/tmp/hls/${userId}`;
+    if (fs.existsSync(hlsPath)) {
+        fs.rmSync(hlsPath, { recursive: true, force: true });
+        logger.info(`[CLEANUP] HLS files removed for userId: ${userId}`);
+    }
+    else {
+        logger.info(`[CLEANUP] No HLS files found for userId: ${userId}`);
     }
 });
 
