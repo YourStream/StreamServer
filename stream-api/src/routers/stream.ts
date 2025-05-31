@@ -147,4 +147,14 @@ router.post('/set_source_info', serviceAuthGuard, async (req, res) => {
     res.status(200).end();
 });
 
+router.post('/batch', serviceAuthGuard, async (req, res) => {
+    const ids = req.body.ids as string[];
+    if (!Array.isArray(ids) || ids.length === 0) {
+        res.status(400).json({ error: "ids is required" });
+        return;
+    }
+    const streams = await StreamModel.find({ _id: { $in: ids } });
+    res.json(streams.map(s => s.toShortResponse()));
+});
+
 export default router;

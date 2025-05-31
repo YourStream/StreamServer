@@ -6,6 +6,7 @@ const StreamSchema = new Schema({
   description: { type: String },
   streamKey: { type: String, required: true, unique: true, index: true },
   isLive: { type: Boolean, required: true },
+  tags: { type: [String], default: [] }, // Додаємо масив тегів
   source: {
     type: {
       width: Number,
@@ -27,7 +28,9 @@ const StreamSchema = new Schema({
       return {
         _id: this._id.toString(),
         title: this.title,
-        isLive: this.isLive
+        description: this.description,
+        isLive: this.isLive,
+        tags: this.tags || [], // Додаємо теги у коротку відповідь
       };
     },
 
@@ -37,6 +40,7 @@ const StreamSchema = new Schema({
         title: this.title,
         description: this.description,
         isLive: this.isLive,
+        tags: this.tags || [], // Додаємо теги у повну відповідь
         source: {
           width: this.source.width,
           height: this.source.height,
